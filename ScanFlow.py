@@ -222,8 +222,14 @@ class MainApp(tk.Tk):
         if focused in (self.barcodeText, self.productCombo) or isinstance(focused, ttk.Entry):
             return
 
+        # 如果按键是可打印字符
         if event.char and len(event.char) == 1 and event.char.isprintable():
+            # 1. 先将焦点切到输入框
             self.barcodeText.focus_set()
+            # 2. 手动将丢失的第一个字符插入输入框末尾
+            self.barcodeText.insert(tk.END, event.char)
+            # 3. 手动触发按键释放的倒计时逻辑（防止漏触发）
+            self.onKeyRelease(event)
 
     def onKeyRelease(self, event):
         rawText = self.barcodeText.get("1.0", tk.END)
