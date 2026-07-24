@@ -7,7 +7,7 @@
 
 ## 打包
 
-* Python 3.8.10（支持 Windows 7 及以上）  
+* Python 3.8.10 32位（支持 Windows 7 及以上）  
 
 ## 许可证
 

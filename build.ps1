@@ -1,6 +1,6 @@
 $startTime = Get-Date
 
-py -3.8 -m venv venv
+py -3.8-32 -m venv venv
 .\venv\Scripts\Activate.ps1
 python.exe -m pip install --upgrade pip
 pip install nuitka==4.1.3
@@ -21,7 +21,7 @@ nuitka --standalone `
 --windows-icon-from-ico=.\icon.ico `
 --include-data-file=.\icon.ico=.\ `
 --output-dir=dist `
---output-filename=ScanFlow_win_amd64 `
+--output-filename=ScanFlow_win_x86 `
 .\ScanFlow.py
 
 $endTime = Get-Date
