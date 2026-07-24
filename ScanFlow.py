@@ -40,6 +40,9 @@ class MainApp(tk.Tk):
         iconPath = os.path.join(iconDir, "icon.ico")
         self.iconbitmap(iconPath)
 
+        # ⚡ 关键点 1：配置 Combobox 弹出下拉选项列表框的字体大小为 24
+        self.option_add("*TCombobox*Listbox.font", ("Microsoft YaHei", 24))
+
         self.reloadFlashCountConfig()
         self.buildUi()
         self.reloadProductList()
@@ -66,15 +69,16 @@ class MainApp(tk.Tk):
         productFrame.pack(fill=tk.X, padx=15, pady=5)
 
         self.productComboVar = tk.StringVar()
+        # ⚡ 关键点 2：将输入框显示的字体设置为 24 号
         self.productCombo = ttk.Combobox(
             productFrame, 
             textvariable=self.productComboVar, 
-            font=("Microsoft YaHei", 12), 
+            font=("Microsoft YaHei", 24), 
             state="readonly"
         )
         self.productCombo.pack(fill=tk.X, expand=True)
 
-# ---------------- 扫码输入区域 ----------------
+        # ---------------- 扫码输入区域 ----------------
         scanFrame = ttk.Frame(self, padding=10)
         scanFrame.pack(fill=tk.X, padx=15)
 
