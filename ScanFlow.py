@@ -137,6 +137,8 @@ class MainApp(tk.Tk):
             state="readonly"
         )
         self.productCombo.pack(fill=tk.X, expand=True)
+        # 完成自动选择后默认归还焦点到录入框
+        self.productCombo.bind("<<ComboboxSelected>>", lambda e: self.barcodeText.focus_set())
 
         # ---------------- 扫码输入区域 ----------------
         scanFrame = ttk.Frame(self, padding=10)
@@ -337,15 +339,29 @@ class MainApp(tk.Tk):
         self.flashTimer = self.after(100, lambda: self.flashWindow(count - 1, color1, color2))
 
     def onGlobalKeypress(self, event):
-        focused = self.focus_get()
+        focused = None
+        isPopdownActive = False
+
+        # 1. 尝试获取焦点，捕获并处理 KeyError: 'popdown'
+        try:
+            focused = self.focus_get()
+        except KeyError:
+            # 触发 KeyError 意味着当前焦点必定落在 Combobox 的展开下拉列表 (popdown) 上
+            isPopdownActive = True
+
+        # 2. 如果焦点在系统的其他独立子弹窗（如设置对话框、产品管理弹窗）中，不要抢焦点
         if focused and focused.winfo_toplevel() != self:
             return
 
-        if focused in (self.barcodeText, self.productCombo) or isinstance(focused, ttk.Entry):
+        if focused == self.barcodeText or isinstance(focused, ttk.Entry):
             return
 
-        # 如果按键是可打印字符
+        # 4. 如果按键是可打印字符（扫码枪数据或正常键盘输入）
         if event.char and len(event.char) == 1 and event.char.isprintable():
+            # 如果下拉列表处于展开状态（或焦点在 productCombo 上），先发送 Escape 键收起下拉框
+            if isPopdownActive or focused == self.productCombo:
+                self.productCombo.event_generate("<Escape>")
+
             # 1. 先将焦点切到输入框
             self.barcodeText.focus_set()
             # 2. 强制切换为英文输入法
