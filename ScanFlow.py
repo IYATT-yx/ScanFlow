@@ -48,6 +48,58 @@ class MainApp(tk.Tk):
         self.reloadProductList()
         self.loadLogsToTree()
 
+        # 绑定扫码输入框获取焦点事件：触发强制切英文
+        self.barcodeText.bind("<FocusIn>", lambda e: self.switchToEnglishIme())
+
+        # 启动时先强制切一次英文
+        self.after(100, self.switchToEnglishIme)
+
+        # 启动日期时间及输入法状态的实时刷新
+        self.updateSystemStatus()
+
+    def switchToEnglishIme(self):
+        """利用 Win32 API 强制加载并切换当前窗口至美式英语 (00000409) 布局"""
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+
+            # 常量定义
+            KLF_ACTIVATE = 0x00000001
+            KLF_SETFORPROCESS = 0x00000100
+            SPI_SETDEFAULTINPUTLANG = 0x005A
+            SPIF_SENDCHANGE = 0x0002
+            WM_INPUTLANGCHANGEREQUEST = 0x0050
+            INPUTLANGCHANGE_FORWARD = 0x0002
+
+            # 1. 动态加载美式英语键盘布局 ("00000409")
+            hKlEnglish = user32.LoadKeyboardLayoutW("00000409", KLF_ACTIVATE)
+
+            if hKlEnglish:
+                # 2. 改变系统未来新窗口的默认语言
+                user32.SystemParametersInfoW(
+                    SPI_SETDEFAULTINPUTLANG, 
+                    0, 
+                    ctypes.byref(ctypes.c_void_p(hKlEnglish)), 
+                    SPIF_SENDCHANGE
+                )
+
+                # 3. 获取当前真正处于活跃状态的顶层窗口
+                hWndFore = user32.GetForegroundWindow()
+
+                if hWndFore:
+                    # 4. 向当前活跃窗口直接投递语言切换请求
+                    user32.SendMessageW(
+                        hWndFore, 
+                        WM_INPUTLANGCHANGEREQUEST, 
+                        INPUTLANGCHANGE_FORWARD, 
+                        hKlEnglish
+                    )
+
+                    # 5. 激活当前进程的布局（双重保险）
+                    user32.ActivateKeyboardLayout(hKlEnglish, KLF_SETFORPROCESS)
+        except Exception as e:
+            print(f"切换输入法异常: {e}")
+
     def reloadFlashCountConfig(self):
         """刷新闪烁次数设置，防止设置后不生效"""
         self.flashCount = self.dbManager.getSavedFlashCount()
@@ -58,6 +110,14 @@ class MainApp(tk.Tk):
         topControlFrame.pack(fill=tk.X, padx=10, pady=2)
 
         ttk.Label(topControlFrame, text=appName, font=("Microsoft YaHei", 12, "bold")).pack(side=tk.LEFT)
+
+        # 新增：顶部工具栏中用于显示【日期时间】与【输入法状态】的标签
+        self.sysStatusLabel = ttk.Label(
+            topControlFrame, 
+            text="系统时间加载中... | 输入法检测中...", 
+            font=("Microsoft YaHei", 10, "bold")
+        )
+        self.sysStatusLabel.pack(side=tk.LEFT, padx=20)
 
         ttk.Button(topControlFrame, text="退出系统", command=self.destroy).pack(side=tk.RIGHT, padx=5)
         ttk.Button(topControlFrame, text="系统设置", command=self.openSettings).pack(side=tk.RIGHT, padx=5)
@@ -164,6 +224,64 @@ class MainApp(tk.Tk):
 
         self.barcodeText.focus_set()
 
+    def getImeStatus(self):
+        """实时检测当前窗口的输入法中英文输入模式 (兼容 Win7 - Win11)"""
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            imm32 = ctypes.windll.imm32
+
+            # 1. 获取当前焦点/前台窗口句柄
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd:
+                return "未知"
+
+            # 2. 检查系统键盘布局，如果是纯英文键盘 (如 US 0x0409)
+            thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+            klid = user32.GetKeyboardLayout(thread_id)
+            lang_id = klid & 0xFFFF
+            if lang_id == 0x0409:
+                return "英文 [EN]"
+
+            # 3. 获取输入法上下文 (hIMC)
+            hIMC = imm32.ImmGetContext(hwnd)
+            if not hIMC:
+                # 无法获取上下文（如纯英文输入状态或不支持 IME 的控件）
+                return "英文 [EN]"
+
+            try:
+                # 检查输入法开启状态 (OpenStatus: True 为开启，False 为关闭/英文直接输入)
+                open_status = imm32.ImmGetOpenStatus(hIMC)
+                if not open_status:
+                    return "英文 [EN]"
+
+                # 获取转换模式标志 (Conversion Status)
+                conversion = ctypes.c_ulong()
+                sentence = ctypes.c_ulong()
+                if imm32.ImmGetConversionStatus(hIMC, ctypes.byref(conversion), ctypes.byref(sentence)):
+                    # IME_CMODE_NATIVE (0x0001): 1 表示中文模式，0 表示输入法内部的英文模式
+                    if conversion.value & 0x0001:
+                        return "中文 [中]"
+                    else:
+                        return "英文 [英]"
+
+                return "中文 [中]" if open_status else "英文 [EN]"
+            finally:
+                # 必须释放上下文，防止句柄泄漏
+                imm32.ImmReleaseContext(hwnd, hIMC)
+
+        except Exception:
+            return "未知"
+
+    def updateSystemStatus(self):
+        """定时刷新界面顶部的当前日期、时间以及输入法状态"""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ime_str = self.getImeStatus()
+        
+        self.sysStatusLabel.config(text=f"📅 {now_str}  |  ⌨️ 语言模式: {ime_str}")
+        # 每 200ms 高频刷新一次，保证按下 Shift 切换模式时响应迅速
+        self.after(200, self.updateSystemStatus)
+
     def reloadProductList(self):
         self.productList = self.dbManager.getAllProducts()
 
@@ -230,9 +348,11 @@ class MainApp(tk.Tk):
         if event.char and len(event.char) == 1 and event.char.isprintable():
             # 1. 先将焦点切到输入框
             self.barcodeText.focus_set()
-            # 2. 手动将丢失的第一个字符插入输入框末尾
+            # 2. 强制切换为英文输入法
+            self.switchToEnglishIme()
+            # 3. 手动将丢失的第一个字符插入输入框末尾
             self.barcodeText.insert(tk.END, event.char)
-            # 3. 手动触发按键释放的倒计时逻辑（防止漏触发）
+            # 4. 手动触发按键释放的倒计时逻辑（防止漏触发）
             self.onKeyRelease(event)
 
     def onKeyRelease(self, event):
